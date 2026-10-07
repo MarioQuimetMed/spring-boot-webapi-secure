@@ -14,7 +14,7 @@ concurrency:
 env:
   JAVA_VERSION: '25'
   MAVEN_OPTS: '-Xmx2g'
-  SKIP_SCA: 'false'  # Set to 'true' to skip SCA (Dependency-Check) step and moving to nightly
+  # SCA (Dependency-Check) se ejecuta solo en el workflow nightly
 
 jobs:
   # ------------------------------------------------------------------
@@ -98,42 +98,25 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:java"
+          output: codeql-sarif
 
-  # ------------------------------------------------------------------
-  # 3. Software Composition Analysis (SCA) - Dependency vulnerabilities
-  # ------------------------------------------------------------------
-  sca-dependency-check:
-    name: SCA - OWASP Dependency-Check
-    runs-on: ubuntu-latest
-    if: false  # Skip this job if SKIP_SCA is set to 'true'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
-          cache: maven
-
-      - name: Run OWASP Dependency-Check
-        run: |
-          mvn -B org.owasp:dependency-check-maven:check \
-              -DfailBuildOnCVSS=7 \
-              -DsuppressionFile=dependency-check-suppressions.xml || true
-        # Remove "|| true" once you have suppressions in place and want hard fails
-
-      - name: Upload Dependency-Check report
+      - name: Upload CodeQL SARIF
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: dependency-check-report
-          path: target/dependency-check-report.html
-          retention-days: 14
+          name: codeql-sarif
+          path: codeql-sarif/
+          retention-days: 7
 
   # ------------------------------------------------------------------
-  # 4. Optional: SpotBugs + PMD (static analysis)
+  # 3. SAST - Semgrep (workflow reutilizable)
+  # ------------------------------------------------------------------
+  semgrep:
+    name: SAST - Semgrep
+    uses: ./.github/workflows/security-semgrep.yml
+
+  # ------------------------------------------------------------------
+  # 4. SpotBugs + PMD (static analysis)
   # ------------------------------------------------------------------
   static-analysis:
     name: Static Analysis (SpotBugs + PMD)
@@ -145,15 +128,15 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: ${{ env.JAVA_VERSION }}
+          java-version: '21'      # SpotBugs 4.8.x no soporta ejecutarse sobre JDK 25
           distribution: 'temurin'
           cache: maven
 
       - name: Run SpotBugs & PMD
         run: |
           mvn -B clean compile \
-              com.github.spotbugs:spotbugs-maven-plugin:check \
-              org.apache.maven.plugins:maven-pmd-plugin:check || true
+              com.github.spotbugs:spotbugs-maven-plugin:spotbugs \
+              org.apache.maven.plugins:maven-pmd-plugin:pmd
 
       - name: Upload SpotBugs / PMD reports
         uses: actions/upload-artifact@v4
@@ -166,28 +149,22 @@ jobs:
           retention-days: 7
 
   # ------------------------------------------------------------------
-  # 5. Quality Gate summary (optional - fails the workflow if critical issues)
+  # 5. Quality Gate - lee los reportes y falla ante hallazgos HIGH/CRITICAL
   # ------------------------------------------------------------------
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [build-and-test, sast-codeql, sca-dependency-check]
+    needs: [build-and-test, sast-codeql, semgrep, static-analysis]
     if: always()
     steps:
-      - name: Check previous job results
-        run: |
-          echo "Build & Test: ${{ needs.build-and-test.result }}"
-          echo "CodeQL:       ${{ needs.sast-codeql.result }}"
-          echo "SCA:          ${{ needs.sca-dependency-check.result }}"
+      - uses: actions/checkout@v4
 
-          if [[ "${{ needs.build-and-test.result }}" == "failure" ]]; then
-            echo "::error::Build or tests failed"
-            exit 1
-          fi
+      - name: Download reports
+        uses: actions/download-artifact@v4
+        with:
+          path: reports
 
-          if [[ "${{ needs.sast-codeql.result }}" == "failure" ]]; then
-            echo "::error::CodeQL found high-severity security issues"
-            exit 1
-          fi
-
-          echo "Quality gate passed"
+      - name: Evaluate reports
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: bash .github/scripts/quality-gate.sh reports codeql semgrep spotbugs
