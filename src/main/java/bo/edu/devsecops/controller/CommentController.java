@@ -13,6 +13,8 @@ import java.util.Map;
 @RequestMapping("/api/comments")
 public class CommentController {
 
+    //Comentario de prueba pal pr
+
     @PostMapping(value = "/preview", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> preview(@RequestBody Map<String, String> body) {
         String comment = body.getOrDefault("comment", "");
