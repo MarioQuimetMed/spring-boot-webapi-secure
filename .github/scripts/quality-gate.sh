@@ -2,10 +2,10 @@
 # Quality Gate: lee los reportes de seguridad y falla si hay hallazgos HIGH/CRITICAL.
 #
 # Uso:  quality-gate.sh <dir-reportes> <herramienta>...
-#       herramientas: semgrep | spotbugs | dependency-check | codeql
+#       herramientas: semgrep | spotbugs | dependency-check | codeql | trivy | conftest
 # NEEDS (opcional): JSON de `needs` del workflow; falla si algun job termino en failure.
 #
-# Local: bash .github/scripts/quality-gate.sh . semgrep spotbugs dependency-check
+# Local: bash .github/scripts/quality-gate.sh . semgrep spotbugs dependency-check trivy conftest
 set -uo pipefail
 
 dir=$1; shift
@@ -35,6 +35,14 @@ count_codeql() {
        | .results[] | select(($sev[.ruleId] // 0) >= 7)] | length' "$1"
 }
 
+# Trivy (imagen): vulnerabilidades HIGH o CRITICAL
+count_trivy() {
+  jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH" or .Severity == "CRITICAL")] | length' "$1"
+}
+
+# Conftest (Policy as Code): reglas deny incumplidas (los warn no bloquean)
+count_conftest() { jq '[.[].failures[]?] | length' "$1"; }
+
 check() { # check <etiqueta> <patron -path del reporte> <funcion de conteo>
   local label=$1 pattern=$2 counter=$3 f n
   f=$(find "$dir" -path "$pattern" -print -quit)
@@ -45,6 +53,12 @@ check() { # check <etiqueta> <patron -path del reporte> <funcion de conteo>
     return
   fi
   n=$($counter "$f")
+  if ! [[ "$n" =~ ^[0-9]+$ ]]; then
+    echo "::error::$label: no se pudo leer el reporte $f"
+    log "❌ $label: reporte ilegible"
+    fail=1
+    return
+  fi
   if (( n > 0 )); then
     echo "::error::$label: $n hallazgos criticos en $f"
     log "❌ $label: $n hallazgos criticos"
@@ -71,6 +85,8 @@ for tool in "$@"; do
     spotbugs)         check SpotBugs         '*/spotbugsXml.xml'              count_spotbugs ;;
     dependency-check) check Dependency-Check '*/dependency-check-report.json' count_dependency_check ;;
     codeql)           check CodeQL           '*/codeql-sarif/*.sarif'         count_codeql ;;
+    trivy)            check Trivy            '*/trivy-report.json'            count_trivy ;;
+    conftest)         check Conftest         '*/conftest-report.json'         count_conftest ;;
     *) echo "::error::Herramienta desconocida: $tool"; fail=1 ;;
   esac
 done

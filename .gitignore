@@ -4,3 +4,6 @@ target/
 .vscode/
 *.log
 semgrep-results.*
+semgrep-report.json
+trivy-report.json
+conftest-report.json
