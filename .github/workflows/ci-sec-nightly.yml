@@ -6,9 +6,6 @@ on:
       # timezone: "America/La_Paz"
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 env:
   JAVA_VERSION: "25"
   MAVEN_OPTS: "-Xmx2g"
