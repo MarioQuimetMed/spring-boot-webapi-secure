@@ -1,10 +1,8 @@
 name: Security - Semgrep
 
+# Reutilizable: lo invocan CI, CI/CD y Nightly para que su reporte llegue al Quality Gate.
 on:
-  push:
-    branches: [feature/**', 'bugfix/**', 'hotfix/**']
-  pull_request:
-    branches: [main, develop]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
