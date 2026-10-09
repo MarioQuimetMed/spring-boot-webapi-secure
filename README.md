@@ -47,6 +47,26 @@ curl -X POST http://localhost:8080/api/auth/login \
   -d '{"username":"usuario","password":"prueba"}'
 ```
 
+## Pipeline CI/CD y despliegue local
+
+Flujo: `push` a la rama → GitHub Actions compila y prueba → SAST (Semgrep, CodeQL,
+SpotBugs/PMD) → Policy as Code (Conftest) → construye la imagen del proyecto, la
+escanea con Trivy y publica **esa misma imagen** en GHCR como `sha-<commit>` y
+`<rama>` → Quality Gate. Todos los reportes JSON quedan como artifacts de la ejecución.
+
+El despliegue local (CD) se inicia manualmente con [docker-compose.yml](docker-compose.yml),
+que descarga la imagen publicada y la ejecuta en `http://localhost:8081`
+(el 8080 lo ocupa DefectDojo).
+
+El paquete hereda la visibilidad publica del repositorio, por lo que no requiere `docker login`.
+
+```powershell
+docker compose up -d                              # ultima imagen de la rama
+$env:TAG="sha-<commit>"; docker compose up -d     # o la de un commit concreto
+docker compose ps                                 # STATUS -> (healthy)
+docker compose down                               # detener
+```
+
 ## Semgrep local
 
 ```bash

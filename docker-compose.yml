@@ -1,0 +1,12 @@
+# CD local: despliega la imagen publicada por el pipeline en GHCR.
+#   docker compose up -d                                   -> ultima imagen de la rama
+#   $env:TAG="sha-d88c510"; docker compose up -d           -> version de un commit concreto
+# Puerto 8081 porque DefectDojo ocupa el 8080.
+services:
+  webapi:
+    image: ghcr.io/marioquimetmed/spring-boot-webapi-secure:${TAG:-feature-add-to-deploy-image-docker}
+    pull_policy: always
+    container_name: webapi
+    ports:
+      - "8081:8080"
+    restart: unless-stopped

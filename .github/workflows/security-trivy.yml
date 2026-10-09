@@ -1,0 +1,71 @@
+name: Security - Trivy
+
+# Reutilizable: construye la imagen DEL PROYECTO, la escanea con Trivy (reporte JSON)
+# y, si push=true, publica esa misma imagen en GHCR para el despliegue local.
+# Los permisos los define el job que lo invoca (packages: write para publicar).
+on:
+  workflow_call:
+    inputs:
+      push:
+        description: Publicar la imagen en GHCR despues del escaneo
+        type: boolean
+        default: false
+  workflow_dispatch:
+
+jobs:
+  trivy:
+    name: Image Scan con Trivy
+    runs-on: ubuntu-latest
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.74.0
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Definir nombre de la imagen
+        # GHCR exige minusculas; el tag identifica el commit construido
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Construir imagen del proyecto
+        run: |
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            -t "$IMAGE" .
+
+      - name: Escanear imagen con Trivy (JSON)
+        # Sin --exit-code: el Quality Gate decide leyendo el JSON
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/out" \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --format json \
+            --output /out/trivy-report.json \
+            "$IMAGE"
+
+      - name: Mostrar resumen de Trivy
+        run: docker run --rm -v "$PWD:/out" "$TRIVY_IMAGE" convert --format table /out/trivy-report.json
+
+      - name: Publicar reporte de Trivy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publicar imagen en GHCR
+        if: inputs.push
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          BRANCH_TAG="${IMAGE%:*}:${GITHUB_REF_NAME//\//-}"   # feature/x -> feature-x (tag valido)
+          docker tag "$IMAGE" "$BRANCH_TAG"
+          docker push "$IMAGE"
+          docker push "$BRANCH_TAG"
+          echo "### Imagen publicada: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"

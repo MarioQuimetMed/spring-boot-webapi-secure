@@ -1,36 +1,34 @@
 # ---- Build stage ----
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9-eclipse-temurin-21 AS builder
 WORKDIR /app
 
-# Copy Maven wrapper & pom first (better layer caching)
-COPY mvnw .
-COPY .mvn .mvn
+# pom primero: las dependencias quedan en cache mientras no cambie el pom
 COPY pom.xml .
-
-# Download dependencies (cached unless pom changes)
-RUN ./mvnw dependency:go-offline -B
+RUN mvn dependency:go-offline -B
 
 # Copy source and build
 COPY src src
-RUN ./mvnw package -DskipTests -B
+RUN mvn package -DskipTests -B
 
 # ---- Runtime stage ----
-FROM eclipse-temurin:21-jdk-alpine
+# Runtime solo con JRE (sin compilador ni herramientas del JDK): menos superficie de ataque
+FROM eclipse-temurin:21-jre-alpine
 
-# Security: run as non-root user
-RUN groupadd -r spring && useradd -r -g spring spring
-USER spring:spring
+# Security: run as non-root user (Alpine usa addgroup/adduser)
+RUN addgroup -S spring && adduser -S -G spring spring
 
 WORKDIR /app
 
 # Copy only the fat jar
 COPY --from=builder /app/target/*.jar app.jar
 
+USER spring:spring
+
 # Optional: expose actuator / app port
 EXPOSE 8080
 
-# Health check (adjust path if needed)
+# Health check (wget viene en Alpine; curl no)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8080/actuator/health || exit 1
+  CMD wget -qO- http://localhost:8080/actuator/health || exit 1
 
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
