@@ -47,6 +47,27 @@ curl -X POST http://localhost:8080/api/auth/login \
   -d '{"username":"usuario","password":"prueba"}'
 ```
 
+## Pipeline CI/CD y despliegue local
+
+Flujo: `push` a la rama → GitHub Actions compila y prueba → SAST (Semgrep, CodeQL,
+SpotBugs/PMD) → Policy as Code (Conftest) → construye la imagen del proyecto, la
+escanea con Trivy y publica **esa misma imagen** en GHCR como `sha-<commit>` y
+`<rama>` → Quality Gate. Todos los reportes JSON quedan como artifacts de la ejecución.
+
+El despliegue local (CD) se inicia manualmente descargando la imagen publicada
+(PowerShell; el paquete es privado: usar un PAT con `read:packages`):
+
+```powershell
+$env:CR_PAT | docker login ghcr.io -u <usuario-github> --password-stdin
+$SHA = "<7 primeros caracteres del commit>"
+docker pull ghcr.io/marioquimetmed/spring-boot-webapi-secure:sha-$SHA
+docker run -d --name webapi -p 8081:8080 ghcr.io/marioquimetmed/spring-boot-webapi-secure:sha-$SHA
+docker ps                                       # STATUS -> (healthy)
+curl.exe http://localhost:8081/actuator/health
+```
+
+Se usa el puerto 8081 porque DefectDojo ocupa el 8080. Para detenerla: `docker rm -f webapi`.
+
 ## Semgrep local
 
 ```bash

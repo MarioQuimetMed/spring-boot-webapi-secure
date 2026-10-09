@@ -64,7 +64,8 @@ jobs:
           TOKEN: ${{ github.token }}
         run: |
           echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker tag "$IMAGE" "${IMAGE%:*}:${GITHUB_REF_NAME}"
+          BRANCH_TAG="${IMAGE%:*}:${GITHUB_REF_NAME//\//-}"   # feature/x -> feature-x (tag valido)
+          docker tag "$IMAGE" "$BRANCH_TAG"
           docker push "$IMAGE"
-          docker push "${IMAGE%:*}:${GITHUB_REF_NAME}"
+          docker push "$BRANCH_TAG"
           echo "### Imagen publicada: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"

@@ -151,9 +151,15 @@ jobs:
   # ------------------------------------------------------------------
   # 5. Analisis de la imagen del proyecto - Trivy (workflow reutilizable)
   # ------------------------------------------------------------------
+  # En push publica la imagen escaneada en GHCR (CD local); en PR solo escanea.
   image-scan:
     name: Image Scan - Trivy
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/security-trivy.yml
+    with:
+      push: ${{ github.event_name == 'push' }}
 
   # ------------------------------------------------------------------
   # 6. Policy as Code - Conftest sobre el Dockerfile
