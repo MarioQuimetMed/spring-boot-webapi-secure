@@ -11,9 +11,8 @@ COPY src src
 RUN mvn package -DskipTests -B
 
 # ---- Runtime stage ----
-# Hallazgo pendiente (Trivy/Conftest): el runtime usa el JDK completo.
-# Remediacion: eclipse-temurin:21-jre-alpine
-FROM eclipse-temurin:21-jdk-alpine
+# Runtime solo con JRE (sin compilador ni herramientas del JDK): menos superficie de ataque
+FROM eclipse-temurin:21-jre-alpine
 
 # Security: run as non-root user (Alpine usa addgroup/adduser)
 RUN addgroup -S spring && adduser -S -G spring spring
